@@ -70,4 +70,4 @@ text_editor/
 ```
 
 ---
-*Vytvořeno v rámci výuky a pro radost z programování.*
+
