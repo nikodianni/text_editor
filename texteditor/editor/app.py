@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, simpledialog
 import os
-from editor.tab import EditorTab  # import zalozky z druheho souboru
+from editor.tab import EditorTab
 
 class EditorApp(tk.Tk):
     def __init__(self):
@@ -19,6 +19,9 @@ class EditorApp(tk.Tk):
         self.add_new_tab()
         self.apply_global_theme()
 
+        # Zachycení kliknutí na křížek pro zavření okna
+        self.protocol("WM_DELETE_WINDOW", self.on_exit)
+
     def create_menu(self):
         self.menubar = tk.Menu(self)
         self.config(menu=self.menubar)
@@ -29,7 +32,7 @@ class EditorApp(tk.Tk):
         file_menu.add_command(label="Otevřít...", command=self.open_file, accelerator="Ctrl+O")
         file_menu.add_command(label="Uložit", command=self.save_file, accelerator="Ctrl+S")
         file_menu.add_separator()
-        file_menu.add_command(label="Ukončit", command=self.quit)
+        file_menu.add_command(label="Ukončit", command=self.on_exit)
 
         edit_menu = tk.Menu(self.menubar, tearoff=0)
         self.menubar.add_cascade(label="Úpravy", menu=edit_menu)
@@ -72,13 +75,19 @@ class EditorApp(tk.Tk):
     def add_new_tab(self, file_path=None, content=""):
         new_tab = EditorTab(self.notebook, file_path)
         title = os.path.basename(file_path) if file_path else "Nový soubor"
+        
+        self.notebook.add(new_tab, text=title)
+        
         if file_path:
             new_tab.text_area.insert("1.0", content)
-
-        self.notebook.add(new_tab, text=title)
+            new_tab.has_changes = False
+            
         self.notebook.select(new_tab)
         new_tab.apply_theme(self.is_dark_mode)
         new_tab.on_content_change()
+        
+        # Reset modified flag po vlozeni textu
+        new_tab.text_area.edit_modified(False)
 
     def get_current_tab(self):
         current_tab_id = self.notebook.select()
@@ -100,10 +109,14 @@ class EditorApp(tk.Tk):
             file_path = filedialog.asksaveasfilename(defaultextension=".txt")
             if not file_path: return
             current_tab.file_path = file_path
-            self.notebook.tab(current_tab, text=os.path.basename(file_path))
+            
         try:
             with open(current_tab.file_path, "w", encoding="utf-8") as file:
                 file.write(current_tab.text_area.get("1.0", tk.END).rstrip())
+            
+            # Uspesne ulozeno - vynulujeme zmeny a odstranime hvezdicku
+            current_tab.has_changes = False
+            self.notebook.tab(current_tab, text=os.path.basename(current_tab.file_path))
             messagebox.showinfo("Uloženo", "Soubor byl uložen.")
         except Exception as e:
             messagebox.showerror("Chyba", str(e))
@@ -119,3 +132,19 @@ class EditorApp(tk.Tk):
             current_tab.text_area.delete("1.0", tk.END)
             current_tab.text_area.insert("1.0", novy_obsah)
             current_tab.on_content_change()
+
+    def get_all_tabs(self):
+        return [self.notebook.nametowidget(tab_id) for tab_id in self.notebook.tabs()]
+
+    def on_exit(self):
+        zmeny = any(tab.has_changes for tab in self.get_all_tabs())
+        
+        if zmeny:
+            odpoved = messagebox.askyesno(
+                "Neuložené změny", 
+                "Máte neuložené změny v některých souborech.\nOpravdu chcete editor zavřít a přijít o ně?"
+            )
+            if odpoved:
+                self.destroy()
+        else:
+            self.destroy()

@@ -6,6 +6,7 @@ class EditorTab(ttk.Frame):
     def __init__(self, notebook, file_path=None):
         super().__init__(notebook)
         self.file_path = file_path
+        self.has_changes = False
         
         self.line_numbers = tk.Text(self, width=4, padx=4, takefocus=0, border=0,
                                     state='disabled', wrap='none')
@@ -23,9 +24,22 @@ class EditorTab(ttk.Frame):
         self.text_area.tag_configure("comment", foreground="gray")
         self.text_area.tag_configure("current_line", background="#e8f2fe")
 
+        # Sledovani zmen pres udalost <<Modified>>
+        self.text_area.bind('<<Modified>>', self.on_text_modified)
+        
         self.text_area.bind('<Any-KeyPress>', self.on_content_change)
         self.text_area.bind('<Button-1>', self.on_content_change)
         self.text_area.bind('<MouseWheel>', self.on_content_change)
+
+    def on_text_modified(self, event=None):
+        if self.text_area.edit_modified():
+            if not self.has_changes:
+                self.has_changes = True
+                # Prida hvezdicku do nazvu zalozky, aby uzivatel videl zmenu
+                current_text = self.master.tab(self, "text")
+                if not current_text.startswith("*"):
+                    self.master.tab(self, text="*" + current_text)
+            self.text_area.edit_modified(False)
 
     def apply_theme(self, is_dark):
         if is_dark:
