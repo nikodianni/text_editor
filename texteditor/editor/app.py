@@ -233,3 +233,5 @@ class EditorApp(tk.Tk):
                 file.write(current_tab.text_area.get("1.0", tk.END).rstrip())
             
             current_tab.has_changes = False
+        except Exception as e:
+            messagebox.showerror("Chyba", str(e))
