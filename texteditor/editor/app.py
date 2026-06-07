@@ -1,13 +1,11 @@
-"""hlavni modul aplikace."""
+"""Hlavní okno aplikace editoru."""
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, simpledialog
 import os
-from editor.tab import EditorTab
+from .tab import EditorTab
 
 class EditorApp(tk.Tk):
-    """hlavni okno editoru."""
-    
     def __init__(self) -> None:
         super().__init__()
         self.title("Můj Python Editor")
@@ -16,53 +14,90 @@ class EditorApp(tk.Tk):
         self.is_dark_mode: bool = False
         self.style: ttk.Style = ttk.Style()
         
-        # rozdeleni okna
+        # Rozdělení okna
         self.paned_window: ttk.PanedWindow = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
         self.paned_window.pack(fill=tk.BOTH, expand=True)
         
-        # bocni panel
+        # Boční panel
         self.tree: ttk.Treeview = ttk.Treeview(self.paned_window, show="tree")
         self.paned_window.add(self.tree, weight=0)
         self.tree.bind("<Double-1>", self.on_tree_double_click)
         self.tree.bind("<<TreeviewOpen>>", self.on_tree_open)
         
-        # zalozky
+        # Záložky
         self.notebook: ttk.Notebook = ttk.Notebook(self.paned_window)
         self.paned_window.add(self.notebook, weight=1)
         
+        # Panel vyhledávání (skrytý po spuštění)
+        self.search_frame: ttk.Frame = ttk.Frame(self)
+        self.search_var: tk.StringVar = tk.StringVar()
+        self.search_var.trace_add("write", self.perform_search)
+        
+        ttk.Label(self.search_frame, text="Hledat:").pack(side=tk.LEFT, padx=5, pady=5)
+        self.search_entry: ttk.Entry = ttk.Entry(self.search_frame, textvariable=self.search_var, width=40)
+        self.search_entry.pack(side=tk.LEFT, padx=5, pady=5)
+        self.search_entry.bind("<Escape>", self.hide_search_bar)
+        
+        ttk.Button(self.search_frame, text="Zavřít", command=self.hide_search_bar).pack(side=tk.LEFT, padx=5, pady=5)
+
         self.create_menu()
         self.add_new_tab()
         self.apply_global_theme()
         
-        # nacteni aktualni slozky do panelu
+        # Načtení aktuální složky do panelu
         self.current_dir = os.getcwd()
         self.load_directory(self.current_dir, "")
 
-        # odchyceni zavreni okna
+        # Odchycení zavření okna
         self.protocol("WM_DELETE_WINDOW", self.on_exit)
 
+    def show_search_bar(self, event: tk.Event | None = None) -> None:
+        self.search_frame.pack(side=tk.BOTTOM, fill=tk.X)
+        self.search_entry.focus_set()
+        self.perform_search()
+
+    def hide_search_bar(self, event: tk.Event | None = None) -> None:
+        self.search_frame.pack_forget()
+        current_tab = self.get_current_tab()
+        if current_tab:
+            current_tab.text_area.tag_remove("search_match", "1.0", tk.END)
+            current_tab.text_area.focus_set()
+
+    def perform_search(self, *args) -> None:
+        current_tab = self.get_current_tab()
+        if not current_tab: return
+        
+        current_tab.text_area.tag_remove("search_match", "1.0", tk.END)
+        query = self.search_var.get()
+        if not query: return
+        
+        start_pos = "1.0"
+        while True:
+            start_pos = current_tab.text_area.search(query, start_pos, stopindex=tk.END, nocase=True)
+            if not start_pos: break
+            end_pos = f"{start_pos}+{len(query)}c"
+            current_tab.text_area.tag_add("search_match", start_pos, end_pos)
+            start_pos = end_pos
+
     def load_directory(self, path: str, parent: str) -> None:
-        """nacte obsah slozky."""
         try:
             items = os.listdir(path)
             dirs = sorted([d for d in items if os.path.isdir(os.path.join(path, d))])
             files = sorted([f for f in items if os.path.isfile(os.path.join(path, f))])
             
             for d in dirs:
-                # ignoruj skryte slozky
                 if d.startswith('.'): continue
                 full_path = os.path.join(path, d)
-                node = self.tree.insert(parent, tk.END, text="📁 " + d, values=(full_path, "dir"))
-                self.tree.insert(node, tk.END) # dummy pro sipku
+                node = self.tree.insert(parent, tk.END, text="[Složka] " + d, values=(full_path, "dir"))
+                self.tree.insert(node, tk.END)
                 
             for f in files:
                 full_path = os.path.join(path, f)
-                self.tree.insert(parent, tk.END, text="📄 " + f, values=(full_path, "file"))
+                self.tree.insert(parent, tk.END, text="[Soubor] " + f, values=(full_path, "file"))
         except Exception:
             pass
 
     def on_tree_open(self, event: tk.Event) -> None:
-        """rozbali slozku."""
         node = self.tree.focus()
         values = self.tree.item(node, "values")
         if values and values[1] == "dir":
@@ -70,7 +105,6 @@ class EditorApp(tk.Tk):
             self.load_directory(values[0], node)
 
     def on_tree_double_click(self, event: tk.Event) -> None:
-        """otevre soubor."""
         vyber = self.tree.selection()
         if not vyber: return
         
@@ -80,7 +114,6 @@ class EditorApp(tk.Tk):
         
         file_path = values[0]
         
-        # zkontroluj otevrenou zalozku
         for tab in self.get_all_tabs():
             if tab.file_path == file_path:
                 self.notebook.select(tab)
@@ -93,7 +126,6 @@ class EditorApp(tk.Tk):
             messagebox.showerror("Chyba", str(e))
 
     def create_menu(self) -> None:
-        """tvori horni menu."""
         self.menubar = tk.Menu(self)
         self.config(menu=self.menubar)
 
@@ -107,6 +139,7 @@ class EditorApp(tk.Tk):
 
         edit_menu = tk.Menu(self.menubar, tearoff=0)
         self.menubar.add_cascade(label="Úpravy", menu=edit_menu)
+        edit_menu.add_command(label="Hledat...", command=self.show_search_bar, accelerator="Ctrl+F")
         edit_menu.add_command(label="Nahradit vše...", command=self.replace_all, accelerator="Ctrl+H")
         
         view_menu = tk.Menu(self.menubar, tearoff=0)
@@ -116,11 +149,11 @@ class EditorApp(tk.Tk):
         self.bind("<Control-n>", lambda e: self.add_new_tab())
         self.bind("<Control-o>", lambda e: self.open_file())
         self.bind("<Control-s>", lambda e: self.save_file())
+        self.bind("<Control-f>", self.show_search_bar)
         self.bind("<Control-h>", lambda e: self.replace_all())
         self.bind("<Control-d>", lambda e: self.toggle_theme())
 
     def apply_global_theme(self) -> None:
-        """aplikuje zvolene tema."""
         if self.is_dark_mode:
             bg_color = "#252526"
             fg_color = "#ffffff"
@@ -129,21 +162,25 @@ class EditorApp(tk.Tk):
             self.style.configure("TNotebook.Tab", background="#2d2d2d", foreground=fg_color, padding=[10, 2])
             self.style.map("TNotebook.Tab", background=[("selected", "#1e1e1e")], foreground=[("selected", "#569cd6")])
             
-            # tema stromecku
             self.style.configure("Treeview", background="#252526", foreground=fg_color, fieldbackground="#252526", borderwidth=0)
             self.style.map("Treeview", background=[("selected", "#37373d")])
             
             self.config(bg=bg_color)
             self.menubar.config(bg=bg_color, fg=fg_color)
+            
+            self.style.configure("TFrame", background=bg_color)
+            self.style.configure("TLabel", background=bg_color, foreground=fg_color)
         else:
             self.style.theme_use('vista' if os.name == 'nt' else 'clam')
             
-            # tema stromecku
             self.style.configure("Treeview", background="white", foreground="black", fieldbackground="white", borderwidth=0)
             self.style.map("Treeview", background=[("selected", "#0078d7")])
             
             self.config(bg="#f0f0f0")
             self.menubar.config(bg="#f0f0f0", fg="black")
+            
+            self.style.configure("TFrame", background="#f0f0f0")
+            self.style.configure("TLabel", background="#f0f0f0", foreground="black")
 
         for tab_id in self.notebook.tabs():
             tab = self.notebook.nametowidget(tab_id)
@@ -151,12 +188,10 @@ class EditorApp(tk.Tk):
                 tab.apply_theme(self.is_dark_mode)
 
     def toggle_theme(self) -> None:
-        """prepne rezim."""
         self.is_dark_mode = not self.is_dark_mode
         self.apply_global_theme()
 
     def add_new_tab(self, file_path: str | None = None, content: str = "") -> None:
-        """vytvori novou zalozku."""
         new_tab = EditorTab(self.notebook, file_path)
         title = os.path.basename(file_path) if file_path else "Nový soubor"
         
@@ -173,12 +208,10 @@ class EditorApp(tk.Tk):
         new_tab.text_area.edit_modified(False)
 
     def get_current_tab(self) -> EditorTab | None:
-        """vrati aktivni zalozku."""
         current_tab_id = self.notebook.select()
         return self.notebook.nametowidget(current_tab_id) if current_tab_id else None
 
     def open_file(self) -> None:
-        """dialog otevreni souboru."""
         file_path = filedialog.askopenfilename()
         if file_path:
             try:
@@ -188,7 +221,6 @@ class EditorApp(tk.Tk):
                 messagebox.showerror("Chyba", str(e))
 
     def save_file(self) -> None:
-        """ulozeni aktivni zalozky."""
         current_tab = self.get_current_tab()
         if not current_tab: return
         if not current_tab.file_path:
@@ -201,43 +233,3 @@ class EditorApp(tk.Tk):
                 file.write(current_tab.text_area.get("1.0", tk.END).rstrip())
             
             current_tab.has_changes = False
-            self.notebook.tab(current_tab, text=os.path.basename(current_tab.file_path))
-            messagebox.showinfo("Uloženo", "Soubor byl uložen.")
-            
-            # refresh stromecku po ulozeni noveho souboru
-            self.tree.delete(*self.tree.get_children())
-            self.load_directory(self.current_dir, "")
-            
-        except Exception as e:
-            messagebox.showerror("Chyba", str(e))
-
-    def replace_all(self) -> None:
-        """nahrazeni textu."""
-        current_tab = self.get_current_tab()
-        if not current_tab: return
-        hledat = simpledialog.askstring("Najít", "Hledat:")
-        nahradit = simpledialog.askstring("Nahradit", "Nahradit za:")
-        if hledat and nahradit is not None:
-            obsah = current_tab.text_area.get("1.0", tk.END)
-            novy_obsah = obsah.replace(hledat, nahradit)
-            current_tab.text_area.delete("1.0", tk.END)
-            current_tab.text_area.insert("1.0", novy_obsah)
-            current_tab.on_content_change()
-
-    def get_all_tabs(self) -> list[EditorTab]:
-        """vrati vsechny zalozky."""
-        return [self.notebook.nametowidget(tab_id) for tab_id in self.notebook.tabs() if isinstance(self.notebook.nametowidget(tab_id), EditorTab)]
-
-    def on_exit(self) -> None:
-        """varuje pred zavrenim."""
-        zmeny = any(tab.has_changes for tab in self.get_all_tabs())
-        
-        if zmeny:
-            odpoved = messagebox.askyesno(
-                "Neuložené změny", 
-                "Máte neuložené změny v některých souborech.\nOpravdu chcete editor zavřít a přijít o ně?"
-            )
-            if odpoved:
-                self.destroy()
-        else:
-            self.destroy()
