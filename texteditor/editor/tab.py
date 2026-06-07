@@ -5,8 +5,9 @@ from tkinter import ttk
 import re
 
 class EditorTab(ttk.Frame):
-    def __init__(self, notebook: ttk.Notebook, file_path: str | None = None) -> None:
+    def __init__(self, notebook: ttk.Notebook, status_var: tk.StringVar, file_path: str | None = None) -> None:
         super().__init__(notebook)
+        self.status_var: tk.StringVar = status_var
         self.file_path: str | None = file_path
         self.has_changes: bool = False
         
@@ -34,8 +35,10 @@ class EditorTab(ttk.Frame):
         # vytvoreni kontextoveho menu
         self._create_context_menu()
 
-        # sledovani zmen
+        # sledovani zmen a pozice kurzoru
         self.text_area.bind('<<Modified>>', self.on_text_modified)
+        self.text_area.bind('<KeyRelease>', self.update_cursor_status)
+        self.text_area.bind('<ButtonRelease-1>', self.update_cursor_status)
         
         # akce pro klavesnici a mys
         self.text_area.bind('<Any-KeyPress>', self.on_content_change)
@@ -68,6 +71,12 @@ class EditorTab(ttk.Frame):
         self.text_area.mark_set(tk.INSERT, "1.0")
         self.text_area.see(tk.INSERT)
         return 'break'
+
+    def update_cursor_status(self, event: tk.Event | None = None) -> None:
+        """aktualizuje pozici kurzoru ve stavovem radku."""
+        pos = self.text_area.index(tk.INSERT)
+        radek, sloupec = pos.split('.')
+        self.status_var.set(f"radek: {radek}, sloupec: {sloupec}")
 
     def _on_key_type(self, event: tk.Event) -> str | None:
         """doplnovani a preskakovani znaku."""
@@ -152,6 +161,7 @@ class EditorTab(ttk.Frame):
         self.after(10, self.update_line_numbers)
         self.after(10, self.highlight_current_line)
         self.after(10, self.highlight_syntax)
+        self.after(10, self.update_cursor_status)
 
     def update_line_numbers(self) -> None:
         """prepocet cisel radku."""

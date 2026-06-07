@@ -14,9 +14,14 @@ class EditorApp(tk.Tk):
         self.is_dark_mode: bool = False
         self.style: ttk.Style = ttk.Style()
         
+        # stavovy radek na spodku okna
+        self.status_var: tk.StringVar = tk.StringVar(value="radek: 1, sloupec: 0")
+        self.status_bar: ttk.Label = ttk.Label(self, textvariable=self.status_var, anchor=tk.E)
+        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=2)
+        
         # rozdeleni okna
         self.paned_window: ttk.PanedWindow = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
-        self.paned_window.pack(fill=tk.BOTH, expand=True)
+        self.paned_window.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         
         # bocni panel
         self.tree: ttk.Treeview = ttk.Treeview(self.paned_window, show="tree")
@@ -27,6 +32,7 @@ class EditorApp(tk.Tk):
         # zalozky
         self.notebook: ttk.Notebook = ttk.Notebook(self.paned_window)
         self.paned_window.add(self.notebook, weight=1)
+        self.notebook.bind('<<NotebookTabChanged>>', self.update_status_on_tab_change)
         
         # panel vyhledavani (skryty po spusteni)
         self.search_frame: ttk.Frame = ttk.Frame(self)
@@ -50,6 +56,12 @@ class EditorApp(tk.Tk):
 
         # odchyceni zavreni okna
         self.protocol("WM_DELETE_WINDOW", self.on_exit)
+
+    def update_status_on_tab_change(self, event: tk.Event) -> None:
+        """obnovi stavovy radek pri prepnuti zalozky."""
+        current_tab = self.get_current_tab()
+        if current_tab:
+            current_tab.update_cursor_status()
 
     def show_search_bar(self, event: tk.Event | None = None) -> None:
         """zobrazi panel vyhledavani."""
@@ -178,7 +190,7 @@ class EditorApp(tk.Tk):
             self.config(bg=bg_color)
             self.menubar.config(bg=bg_color, fg=fg_color)
             
-            # barvy panelu hledani
+            # barvy panelu hledani a stavoveho radku
             self.style.configure("TFrame", background=bg_color)
             self.style.configure("TLabel", background=bg_color, foreground=fg_color)
         else:
@@ -190,7 +202,7 @@ class EditorApp(tk.Tk):
             self.config(bg="#f0f0f0")
             self.menubar.config(bg="#f0f0f0", fg="black")
             
-            # barvy panelu hledani
+            # barvy panelu hledani a stavoveho radku
             self.style.configure("TFrame", background="#f0f0f0")
             self.style.configure("TLabel", background="#f0f0f0", foreground="black")
 
@@ -206,7 +218,7 @@ class EditorApp(tk.Tk):
 
     def add_new_tab(self, file_path: str | None = None, content: str = "") -> None:
         """vytvori novou zalozku."""
-        new_tab = EditorTab(self.notebook, file_path)
+        new_tab = EditorTab(self.notebook, self.status_var, file_path)
         title = os.path.basename(file_path) if file_path else "Nový soubor"
         
         self.notebook.add(new_tab, text=title)
