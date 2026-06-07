@@ -16,15 +16,81 @@ class EditorApp(tk.Tk):
         self.is_dark_mode: bool = False
         self.style: ttk.Style = ttk.Style()
         
-        self.notebook: ttk.Notebook = ttk.Notebook(self)
-        self.notebook.pack(fill=tk.BOTH, expand=True)
+        # rozdeleni okna
+        self.paned_window: ttk.PanedWindow = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
+        self.paned_window.pack(fill=tk.BOTH, expand=True)
+        
+        # bocni panel
+        self.tree: ttk.Treeview = ttk.Treeview(self.paned_window, show="tree")
+        self.paned_window.add(self.tree, weight=0)
+        self.tree.bind("<Double-1>", self.on_tree_double_click)
+        self.tree.bind("<<TreeviewOpen>>", self.on_tree_open)
+        
+        # zalozky
+        self.notebook: ttk.Notebook = ttk.Notebook(self.paned_window)
+        self.paned_window.add(self.notebook, weight=1)
         
         self.create_menu()
         self.add_new_tab()
         self.apply_global_theme()
+        
+        # nacteni aktualni slozky do panelu
+        self.current_dir = os.getcwd()
+        self.load_directory(self.current_dir, "")
 
         # odchyceni zavreni okna
         self.protocol("WM_DELETE_WINDOW", self.on_exit)
+
+    def load_directory(self, path: str, parent: str) -> None:
+        """nacte obsah slozky."""
+        try:
+            items = os.listdir(path)
+            dirs = sorted([d for d in items if os.path.isdir(os.path.join(path, d))])
+            files = sorted([f for f in items if os.path.isfile(os.path.join(path, f))])
+            
+            for d in dirs:
+                # ignoruj skryte slozky
+                if d.startswith('.'): continue
+                full_path = os.path.join(path, d)
+                node = self.tree.insert(parent, tk.END, text="📁 " + d, values=(full_path, "dir"))
+                self.tree.insert(node, tk.END) # dummy pro sipku
+                
+            for f in files:
+                full_path = os.path.join(path, f)
+                self.tree.insert(parent, tk.END, text="📄 " + f, values=(full_path, "file"))
+        except Exception:
+            pass
+
+    def on_tree_open(self, event: tk.Event) -> None:
+        """rozbali slozku."""
+        node = self.tree.focus()
+        values = self.tree.item(node, "values")
+        if values and values[1] == "dir":
+            self.tree.delete(*self.tree.get_children(node))
+            self.load_directory(values[0], node)
+
+    def on_tree_double_click(self, event: tk.Event) -> None:
+        """otevre soubor."""
+        vyber = self.tree.selection()
+        if not vyber: return
+        
+        item_id = vyber[0]
+        values = self.tree.item(item_id, "values")
+        if not values or values[1] != "file": return
+        
+        file_path = values[0]
+        
+        # zkontroluj otevrenou zalozku
+        for tab in self.get_all_tabs():
+            if tab.file_path == file_path:
+                self.notebook.select(tab)
+                return
+                
+        try:
+            with open(file_path, "r", encoding="utf-8") as file:
+                self.add_new_tab(file_path, file.read())
+        except Exception as e:
+            messagebox.showerror("Chyba", str(e))
 
     def create_menu(self) -> None:
         """tvori horni menu."""
@@ -63,10 +129,19 @@ class EditorApp(tk.Tk):
             self.style.configure("TNotebook.Tab", background="#2d2d2d", foreground=fg_color, padding=[10, 2])
             self.style.map("TNotebook.Tab", background=[("selected", "#1e1e1e")], foreground=[("selected", "#569cd6")])
             
+            # tema stromecku
+            self.style.configure("Treeview", background="#252526", foreground=fg_color, fieldbackground="#252526", borderwidth=0)
+            self.style.map("Treeview", background=[("selected", "#37373d")])
+            
             self.config(bg=bg_color)
             self.menubar.config(bg=bg_color, fg=fg_color)
         else:
             self.style.theme_use('vista' if os.name == 'nt' else 'clam')
+            
+            # tema stromecku
+            self.style.configure("Treeview", background="white", foreground="black", fieldbackground="white", borderwidth=0)
+            self.style.map("Treeview", background=[("selected", "#0078d7")])
+            
             self.config(bg="#f0f0f0")
             self.menubar.config(bg="#f0f0f0", fg="black")
 
@@ -76,7 +151,7 @@ class EditorApp(tk.Tk):
                 tab.apply_theme(self.is_dark_mode)
 
     def toggle_theme(self) -> None:
-        """prepne tmavy/svetly rezim."""
+        """prepne rezim."""
         self.is_dark_mode = not self.is_dark_mode
         self.apply_global_theme()
 
@@ -103,7 +178,7 @@ class EditorApp(tk.Tk):
         return self.notebook.nametowidget(current_tab_id) if current_tab_id else None
 
     def open_file(self) -> None:
-        """dialog k otevreni souboru."""
+        """dialog otevreni souboru."""
         file_path = filedialog.askopenfilename()
         if file_path:
             try:
@@ -128,11 +203,16 @@ class EditorApp(tk.Tk):
             current_tab.has_changes = False
             self.notebook.tab(current_tab, text=os.path.basename(current_tab.file_path))
             messagebox.showinfo("Uloženo", "Soubor byl uložen.")
+            
+            # refresh stromecku po ulozeni noveho souboru
+            self.tree.delete(*self.tree.get_children())
+            self.load_directory(self.current_dir, "")
+            
         except Exception as e:
             messagebox.showerror("Chyba", str(e))
 
     def replace_all(self) -> None:
-        """dialog pro nahrazeni textu."""
+        """nahrazeni textu."""
         current_tab = self.get_current_tab()
         if not current_tab: return
         hledat = simpledialog.askstring("Najít", "Hledat:")
@@ -149,7 +229,7 @@ class EditorApp(tk.Tk):
         return [self.notebook.nametowidget(tab_id) for tab_id in self.notebook.tabs() if isinstance(self.notebook.nametowidget(tab_id), EditorTab)]
 
     def on_exit(self) -> None:
-        """varuje pred zavrenim neulozeneho."""
+        """varuje pred zavrenim."""
         zmeny = any(tab.has_changes for tab in self.get_all_tabs())
         
         if zmeny:
